@@ -4,10 +4,12 @@ int ledsW = 350;
 int ledsH = 24;
 int leftW = 275;
 int rightW = 75;
+int marqueeIterations = 1;
 
 float titleX = rightW;
 boolean waitingForNews = false;
 int marqueeCount = 0;
+boolean clearLeftScreen = false;
 
 IntList colors = new IntList();
 FloatList posx = new FloatList();
@@ -25,6 +27,9 @@ void settings() {
 void setup() {
   pg = createGraphics(ledsW, ledsH);
   pg.noSmooth();
+  pg.beginDraw();
+  pg.background(12);
+  pg.endDraw();
   thread("fetchPortugalData");
 }
 
@@ -59,17 +64,23 @@ void draw() {
 void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
   pg.pushMatrix();
   pg.translate(x, y);
-  pg.fill(20, 60); // Alpha for trails effect
-  pg.noStroke();
-  pg.rect(0, 0, w, h);
+
+  if (clearLeftScreen) {
+    pg.fill(12);
+    pg.noStroke();
+    pg.rect(0, 0, w, h);
+    clearLeftScreen = false;
+  }
 
   if (totalApiResults > 0) {
     for (int i=0; i<totalApiResults; i++) {
-      float currentSpeed = map(newsImpactScore, 0, 100, 0.5, 3);
-      float px = posx.get(i) + velx.get(i) * currentSpeed;
-      float py = posy.get(i) + vely.get(i) * currentSpeed;
+      float px = posx.get(i) + velx.get(i);
+      float py = posy.get(i) + vely.get(i);
       float d = radiuses.get(i);
       float r = d / 2;
+      
+      float oldX = posx.get(i);
+      float oldY = posy.get(i);
       
       if (px - r < 0) {
         px = r;
@@ -90,6 +101,12 @@ void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
       posx.set(i, px);
       posy.set(i, py);
       
+      pg.stroke(colors.get(i));
+      pg.strokeWeight(d);
+      pg.strokeCap(ROUND);
+      pg.line(oldX, oldY, px, py);
+      
+      pg.noStroke();
       pg.fill(colors.get(i));
       pg.circle(px, py, d);
     }
@@ -102,7 +119,6 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
   pg.translate(x, y);
   pg.clip(0, 0, w, h);
   pg.fill(12);
-  pg.noStroke();
   pg.rect(0, 0, w, h);
   pg.fill(color(map(newsImpactScore,0,100,0,255), map(newsImpactScore,0,100,255,0), 0));
   pg.textSize(12);
@@ -116,7 +132,7 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
     titleX -= titleSpeed;
     if (titleX < -titleW*1.2) {
       marqueeCount++;
-      if (marqueeCount >= 3) {
+      if (marqueeCount >= marqueeIterations) {
         titleX = w;
         waitingForNews = true;
         marqueeCount = 0;

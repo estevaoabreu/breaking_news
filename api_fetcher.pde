@@ -36,65 +36,43 @@ void fetchPortugalData() {
       }
     }
 
-    if (cachedArticles == null || cachedArticles.size() == 0 || currentArticleIndex >= cachedArticles.size()) {
-      JSONObject json = loadJSONObject(coimbraUrl);
-      int fetchedTotal = 0;
-  
-      if (json != null && json.getString("status").equals("ok")) {
-        if (!json.isNull("totalResults")) fetchedTotal = json.getInt("totalResults");
-        cachedArticles = json.getJSONArray("articles");
+    if (cachedArticles == null || cachedArticles.size() == 0) {
+      JSONObject jsonCoimbra = loadJSONObject(coimbraUrl);
+      JSONArray coimbraAll = null;
+      if (jsonCoimbra != null && jsonCoimbra.getString("status").equals("ok")) {
+        coimbraAll = jsonCoimbra.getJSONArray("articles");
+        cachedArticles = filterRecent(coimbraAll, 24);
       }
-  
-      if (cachedArticles == null || cachedArticles.size() == 0) {
-        json = loadJSONObject(portugalUrl);
-        if (json != null && json.getString("status").equals("ok")) {
-          if (!json.isNull("totalResults")) fetchedTotal = json.getInt("totalResults");
-          cachedArticles = json.getJSONArray("articles");
-        }
-      }
-  
-      if (cachedArticles == null || cachedArticles.size() == 0) {
-        json = loadJSONObject(worldUrl);
-        if (json != null && json.getString("status").equals("ok")) {
-          if (!json.isNull("totalResults")) fetchedTotal = json.getInt("totalResults");
-          cachedArticles = json.getJSONArray("articles");
-        }
-      }
-      cachedTotalResults = fetchedTotal;
-      currentArticleIndex = 0;
-    }
-
-    int circlesToDraw = Math.min(cachedTotalResults, 150);
-
-    IntList tempcolors = new IntList();
-    FloatList tempPosx = new FloatList();
-    FloatList tempPosy = new FloatList();
-    FloatList tempRadiuses = new FloatList();
-    FloatList tempVelx = new FloatList();
-    FloatList tempVely = new FloatList();
-    for (int i=0; i<circlesToDraw; i++) {
-      tempcolors.append(color(random(255), random(255), random(255)));
-      tempPosx.append(random(leftW));
-      tempPosy.append(random(ledsH));
-      tempRadiuses.append(random(1, 3));
       
-      float angle = random(TWO_PI);
-      float speed = 1.0;
-      tempVelx.append(cos(angle) * speed);
-      tempVely.append(sin(angle) * speed);
+      JSONArray portAll = null;
+      if (cachedArticles == null || cachedArticles.size() == 0) {
+        JSONObject jsonPort = loadJSONObject(portugalUrl);
+        if (jsonPort != null && jsonPort.getString("status").equals("ok")) {
+          portAll = jsonPort.getJSONArray("articles");
+          cachedArticles = filterRecent(portAll, 24);
+        }
+      }
+      
+      JSONArray worldAll = null;
+      if (cachedArticles == null || cachedArticles.size() == 0) {
+        JSONObject jsonWorld = loadJSONObject(worldUrl);
+        if (jsonWorld != null && jsonWorld.getString("status").equals("ok")) {
+          worldAll = jsonWorld.getJSONArray("articles");
+          cachedArticles = filterRecent(worldAll, 24);
+        }
+      }
+      
+      if (cachedArticles == null || cachedArticles.size() == 0) {
+          if (coimbraAll != null && coimbraAll.size() > 0) cachedArticles = coimbraAll;
+          else if (portAll != null && portAll.size() > 0) cachedArticles = portAll;
+          else if (worldAll != null && worldAll.size() > 0) cachedArticles = worldAll;
+      }
     }
 
-    colors = tempcolors;
-    posx = tempPosx;
-    posy = tempPosy;
-    radiuses = tempRadiuses;
-    velx = tempVelx;
-    vely = tempVely;
-    totalApiResults = circlesToDraw;
-
-    if (cachedArticles != null && cachedArticles.size() > 0 && currentArticleIndex < cachedArticles.size()) {
-      JSONObject selectedArticle = cachedArticles.getJSONObject(currentArticleIndex);
-      currentArticleIndex++;
+    if (cachedArticles != null && cachedArticles.size() > 0) {
+      int randomIndex = int(random(cachedArticles.size()));
+      JSONObject selectedArticle = cachedArticles.getJSONObject(randomIndex);
+      cachedArticles.remove(randomIndex);
 
       currentTitle = selectedArticle.getString("title");
 
@@ -104,6 +82,30 @@ void fetchPortugalData() {
         if (newsImpactScore == 0)
           newsImpactScore = random(100);
       }
+
+      if (posx.size() >= 200) {
+        posx.clear();
+        posy.clear();
+        radiuses.clear();
+        velx.clear();
+        vely.clear();
+        colors.clear();
+        clearLeftScreen = true;
+      }
+      
+      float hue = map(newsImpactScore, 0, 100, 0.5f, 0.833f);
+      int trailColor = java.awt.Color.HSBtoRGB(hue, 1.0f, 1.0f);
+      colors.append(trailColor);
+      posx.append(random(leftW));
+      posy.append(random(ledsH));
+      radiuses.append(random(0.2, 1.5));
+      
+      float currentSpeed = map(newsImpactScore, 0, 100, 0, 3);
+      float angle = random(TWO_PI);
+      velx.append(cos(angle) * currentSpeed);
+      vely.append(sin(angle) * currentSpeed);
+      
+      totalApiResults = posx.size();
 
       if (!selectedArticle.isNull("publishedAt")) {
         String publishedAt = selectedArticle.getString("publishedAt");
@@ -200,4 +202,25 @@ int fetchGeminiImpact(String title, String key) {
     }
     return 0;
   }
+}
+
+JSONArray filterRecent(JSONArray articles, int hours) {
+  if (articles == null) return new JSONArray();
+  JSONArray recent = new JSONArray();
+  long threshold = System.currentTimeMillis() - (hours * 60L * 60L * 1000L);
+  java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+  sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+  for (int i = 0; i < articles.size(); i++) {
+    JSONObject art = articles.getJSONObject(i);
+    if (!art.isNull("publishedAt")) {
+      String pub = art.getString("publishedAt");
+      if (pub.length() >= 19) {
+        try {
+          long t = sdf.parse(pub.substring(0, 19)).getTime();
+          if (t >= threshold) recent.append(art);
+        } catch (Exception e) {}
+      }
+    }
+  }
+  return recent;
 }
