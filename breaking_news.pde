@@ -1,11 +1,12 @@
 PGraphics pg;
+PGraphics textMask;
 
 int ledsW = 350;
 int ledsH = 24;
 int leftW = 275;
 int rightW = 75;
 int marqueeIterations = 1;
-int blobLimit = 100;
+int blobLimit = 20;
 
 float titleX = rightW;
 boolean waitingForNews = false;
@@ -13,6 +14,7 @@ int marqueeCount = 0;
 boolean clearLeftScreen = false;
 
 FloatList hues = new FloatList();
+FloatList targetHues = new FloatList();
 FloatList posx = new FloatList();
 FloatList posy = new FloatList();
 FloatList radiuses = new FloatList();
@@ -33,6 +35,9 @@ void setup() {
   pg.beginDraw();
   pg.background(12);
   pg.endDraw();
+  
+  textMask = createGraphics(ledsW, ledsH);
+  
   thread("fetchPortugalData");
 }
 
@@ -45,9 +50,10 @@ void draw() {
     if (spawnNewBlob) {
       if (posx.size() >= blobLimit) {
         posx.clear(); posy.clear(); radiuses.clear();
-        velx.clear(); vely.clear(); hues.clear(); deformations.clear(); baseSpeeds.clear();
+        velx.clear(); vely.clear(); hues.clear(); targetHues.clear(); deformations.clear(); baseSpeeds.clear();
       }
       hues.append(newBlobHue);
+      targetHues.append(newBlobTargetHue);
       posx.append(newBlobPx);
       posy.append(newBlobPy);
       radiuses.append(newBlobRad);
@@ -189,8 +195,20 @@ void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
       posx.set(i, px);
       posy.set(i, py);
       
-      float hVal = hues.get(i) + 0.001f;
+      float hVal = hues.get(i);
+      float tHue = targetHues.get(i);
+      
+      float fluctuatingTarget = tHue + sin(millis() * 0.001f + i) * 0.05f;
+      
+      float diff = fluctuatingTarget - hVal;
+      if (diff > 0.5f) diff -= 1.0f;
+      if (diff < -0.5f) diff += 1.0f;
+      
+      hVal += diff * 0.02f;
+      
+      if (hVal < 0) hVal += 1.0f;
       if (hVal > 1.0f) hVal -= 1.0f;
+      
       hues.set(i, hVal);
     }
     
@@ -246,12 +264,50 @@ void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
           int bCol = min(255, (int)(bSum / sum));
           
           int pIndex = (int)(px + x) + (int)(py + y) * pg.width;
+          
           pg.pixels[pIndex] = color(rCol, gCol, bCol);
         }
       }
     }
     pg.updatePixels();
   }
+  
+  // Draw clock using textMask to invert color over blobs
+  textMask.beginDraw();
+  textMask.background(0);
+  textMask.fill(255);
+  textMask.textSize(12);
+  textMask.textAlign(LEFT, CENTER);
+  String timeStr = nf(hour(), 2) + ":" + nf(minute(), 2) + ":" + nf(second(), 2);
+  textMask.text(timeStr, x + 5, y + h / 2 - 1);
+  textMask.endDraw();
+  
+  pg.loadPixels();
+  textMask.loadPixels();
+  for (int i = 0; i < textMask.pixels.length; i++) {
+    int textIntensity = textMask.pixels[i] & 0xFF;
+    if (textIntensity > 0) {
+      int bgCol = pg.pixels[i];
+      int bgR = (bgCol >> 16) & 0xFF;
+      int bgG = (bgCol >> 8) & 0xFF;
+      int bgB = bgCol & 0xFF;
+      
+      float alpha = textIntensity / 255.0f;
+      int targetCol;
+      if (bgR <= 15 && bgG <= 15 && bgB <= 15) {
+        targetCol = 255;
+      } else {
+        targetCol = 0;
+      }
+      
+      int outR = (int)(bgR * (1 - alpha) + targetCol * alpha);
+      int outG = (int)(bgG * (1 - alpha) + targetCol * alpha);
+      int outB = (int)(bgB * (1 - alpha) + targetCol * alpha);
+      pg.pixels[i] = color(outR, outG, outB);
+    }
+  }
+  pg.updatePixels();
+
   pg.popMatrix();
 }
 
@@ -261,7 +317,8 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
   pg.clip(0, 0, w, h);
   pg.fill(12);
   pg.rect(0, 0, w, h);
-  pg.fill(color(map(newsImpactScore,0,100,0,255), map(newsImpactScore,0,100,255,0), 0));
+  int c = java.awt.Color.HSBtoRGB(newBlobTargetHue, 1.0f, 1.0f);
+  pg.fill(color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
   pg.textSize(12);
   pg.textAlign(LEFT, CENTER);
 

@@ -6,8 +6,6 @@ import java.io.BufferedReader;
 
 String apiKey = "";
 String coimbraUrl = "https://newsapi.org/v2/everything?q=Coimbra&language=pt&sortBy=publishedAt&apiKey=";
-String portugalUrl = "https://newsapi.org/v2/top-headlines?country=pt&pageSize=40&apiKey=";
-String worldUrl = "https://newsapi.org/v2/top-headlines?language=en&pageSize=40&apiKey=";
 
 String currentTitle = "A carregar dados locais...";
 boolean newDataAvailable = false;
@@ -20,10 +18,12 @@ int publishedMinute = 0;
 int publishedSecond = 0;
 
 JSONArray cachedArticles = null;
+JSONArray allFetchedArticles = null;
+long lastFetchTime = 0;
 int cachedTotalResults = 0;
 int currentArticleIndex = 0;
 
-float newBlobHue, newBlobPx, newBlobPy, newBlobRad, newBlobVx, newBlobVy, newBlobDeform, newBlobSpeed;
+float newBlobHue, newBlobTargetHue, newBlobPx, newBlobPy, newBlobRad, newBlobVx, newBlobVy, newBlobDeform, newBlobSpeed;
 boolean spawnNewBlob = false;
 
 void fetchPortugalData() {
@@ -33,95 +33,100 @@ void fetchPortugalData() {
       if (keys != null) {
         apiKey = keys.getString("news_api_key");
         geminiApiKey = keys.getString("gemini_api_key");
-        coimbraUrl += apiKey;
-        portugalUrl += apiKey;
-        worldUrl += apiKey;
+        if (!coimbraUrl.endsWith(apiKey)) coimbraUrl += apiKey;
       }
     }
 
+    boolean timeToFetch = (System.currentTimeMillis() - lastFetchTime) > (30 * 60 * 1000);
+
     if (cachedArticles == null || cachedArticles.size() == 0) {
-      JSONObject jsonCoimbra = loadJSONObject(coimbraUrl);
-      JSONArray coimbraAll = null;
-      if (jsonCoimbra != null && jsonCoimbra.getString("status").equals("ok")) {
-        coimbraAll = jsonCoimbra.getJSONArray("articles");
-        cachedArticles = filterRecent(coimbraAll, 24);
-      }
-      
-      JSONArray portAll = null;
-      if (cachedArticles == null || cachedArticles.size() == 0) {
-        JSONObject jsonPort = loadJSONObject(portugalUrl);
-        if (jsonPort != null && jsonPort.getString("status").equals("ok")) {
-          portAll = jsonPort.getJSONArray("articles");
-          cachedArticles = filterRecent(portAll, 24);
+      if (timeToFetch) {
+        cachedArticles = new JSONArray();
+        
+        try {
+          JSONObject jsonCoimbra = loadJSONObject(coimbraUrl);
+          if (jsonCoimbra != null && !jsonCoimbra.isNull("status") && jsonCoimbra.getString("status").equals("ok")) {
+            JSONArray coimbraAll = jsonCoimbra.getJSONArray("articles");
+            JSONArray recentCoimbra = filterRecent(coimbraAll, 72); // 72 hours because NewsAPI free tier delays 'everything' endpoint by 24h
+            for (int i = 0; i < recentCoimbra.size(); i++) cachedArticles.append(recentCoimbra.getJSONObject(i));
+          }
+        } catch (Exception e) { println("Coimbra fetch failed: " + e.getMessage()); }
+        
+        allFetchedArticles = new JSONArray();
+        for (int i = 0; i < cachedArticles.size(); i++) {
+          allFetchedArticles.append(cachedArticles.getJSONObject(i));
         }
-      }
-      
-      JSONArray worldAll = null;
-      if (cachedArticles == null || cachedArticles.size() == 0) {
-        JSONObject jsonWorld = loadJSONObject(worldUrl);
-        if (jsonWorld != null && jsonWorld.getString("status").equals("ok")) {
-          worldAll = jsonWorld.getJSONArray("articles");
-          cachedArticles = filterRecent(worldAll, 24);
+        lastFetchTime = System.currentTimeMillis();
+      } else {
+        cachedArticles = new JSONArray();
+        if (allFetchedArticles != null) {
+          for (int i = 0; i < allFetchedArticles.size(); i++) {
+            cachedArticles.append(allFetchedArticles.getJSONObject(i));
+          }
         }
-      }
-      
-      if (cachedArticles == null || cachedArticles.size() == 0) {
-          if (coimbraAll != null && coimbraAll.size() > 0) cachedArticles = coimbraAll;
-          else if (portAll != null && portAll.size() > 0) cachedArticles = portAll;
-          else if (worldAll != null && worldAll.size() > 0) cachedArticles = worldAll;
       }
     }
 
     if (cachedArticles != null && cachedArticles.size() > 0) {
-      int randomIndex = int(random(cachedArticles.size()));
-      JSONObject selectedArticle = cachedArticles.getJSONObject(randomIndex);
-      cachedArticles.remove(randomIndex);
-
-      currentTitle = selectedArticle.getString("title");
-
-      if (!geminiApiKey.equals("")) {
-        newsImpactScore = fetchGeminiImpact(currentTitle, geminiApiKey);
-        println("News Impact Score: " + newsImpactScore);
-        if (newsImpactScore == 0)
-          newsImpactScore = random(100);
+      boolean foundValidArticle = false;
+      JSONObject selectedArticle = null;
+      int socialScore = 50;
+      int economicScore = 50;
+      
+      while (!foundValidArticle && cachedArticles.size() > 0) {
+        int randomIndex = int(random(cachedArticles.size()));
+        selectedArticle = cachedArticles.getJSONObject(randomIndex);
+        cachedArticles.remove(randomIndex);
+  
+        currentTitle = selectedArticle.getString("title");
+  
+        if (!geminiApiKey.equals("")) {
+          int[] scores = fetchGeminiImpact(currentTitle, geminiApiKey);
+          socialScore = scores[0];
+          economicScore = scores[1];
+          newsImpactScore = economicScore;
+          println("Social Impact: " + socialScore + " | Economic Impact: " + economicScore);
+        } else {
+          socialScore = (int)random(100);
+          economicScore = (int)random(100);
+          newsImpactScore = economicScore;
+        }
+        
+        if (economicScore >= 10 || abs(socialScore - 50) >= 20) {
+          foundValidArticle = true;
+        } else {
+          println("Skipping article due to low impact. S:" + socialScore + " E:" + economicScore);
+        }
       }
 
-      newBlobHue = random(1.0f);
-      newBlobPx = random(leftW);
-      newBlobPy = random(ledsH);
-      newBlobSpeed = random(0.5f, 2.0f);
-      newBlobRad = map(newsImpactScore, 0, 100, 2.0f, 8.0f);
-      
-      float angle = random(TWO_PI);
-      newBlobVx = cos(angle) * newBlobSpeed;
-      newBlobVy = sin(angle) * newBlobSpeed;
-      newBlobDeform = map(newsImpactScore, 0, 100, 0.0f, 0.8f);
-      
-      spawnNewBlob = true;
-
-      if (!selectedArticle.isNull("publishedAt")) {
-        String publishedAt = selectedArticle.getString("publishedAt");
-        if (publishedAt.length() >= 19) {
-          publishedHour = int(publishedAt.substring(11, 13));
-          publishedMinute = int(publishedAt.substring(14, 16));
-          publishedSecond = int(publishedAt.substring(17, 19));
+      if (foundValidArticle && selectedArticle != null) {
+        newBlobHue = random(1.0f);
+        newBlobTargetHue = map(socialScore, 0, 100, 0.0f, 0.33f);
+        newBlobPx = random(leftW);
+        newBlobPy = random(ledsH);
+        newBlobSpeed = random(0.25f, 1.0f);
+        newBlobRad = map(economicScore, 0, 100, 2.0f, 8.0f);
+        
+        float angle = random(TWO_PI);
+        newBlobVx = cos(angle) * newBlobSpeed;
+        newBlobVy = sin(angle) * newBlobSpeed;
+        newBlobDeform = map(newsImpactScore, 0, 100, 0.0f, 0.8f);
+        
+        spawnNewBlob = true;
+  
+        if (!selectedArticle.isNull("publishedAt")) {
+          String publishedAt = selectedArticle.getString("publishedAt");
+          if (publishedAt.length() >= 19) {
+            publishedHour = int(publishedAt.substring(11, 13));
+            publishedMinute = int(publishedAt.substring(14, 16));
+            publishedSecond = int(publishedAt.substring(17, 19));
+          }
         }
+      } else {
+        currentTitle = "Nenhuma notícia relevante encontrada de momento. A tentar novamente...";
       }
     } else {
       currentTitle = "Nenhuma notícia encontrada de momento. A tentar novamente...";
-      newsImpactScore = 0;
-      publishedHour = 0;
-      publishedMinute = 0;
-      publishedSecond = 0;
-      hues = new FloatList();
-      posx = new FloatList();
-      posy = new FloatList();
-      radiuses = new FloatList();
-      velx = new FloatList();
-      vely = new FloatList();
-      deformations = new FloatList();
-      baseSpeeds = new FloatList();
-      totalApiResults = 0;
     }
   }
   catch (Exception e) {
@@ -133,11 +138,13 @@ void fetchPortugalData() {
   }
 }
 
-int fetchGeminiImpact(String title, String key) {
+int[] fetchGeminiImpact(String title, String key) {
   HttpURLConnection con = null;
   try {
-    URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + key);
+    URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=" + key);
     con = (HttpURLConnection) url.openConnection();
+    con.setConnectTimeout(5000);
+    con.setReadTimeout(5000);
     con.setRequestMethod("POST");
     con.setRequestProperty("Content-Type", "application/json");
     con.setDoOutput(true);
@@ -148,7 +155,7 @@ int fetchGeminiImpact(String title, String key) {
     JSONArray parts = new JSONArray();
     JSONObject part = new JSONObject();
 
-    String prompt = "Give me a single number from 1 to 100 representing the economic and social impact of this news title: \"" + title + "\". Only return the number, nothing else.";
+    String prompt = "For this news title: \"" + title + "\", give me two numbers. 1) 'social': social impact from 0 (very negative) to 100 (very positive), where 50 is neutral. 2) 'economic': economic impact from 0 to 100. Reply ONLY in JSON format like {\"social\": 50, \"economic\": 20}.";
     part.setString("text", prompt);
     parts.append(part);
     contentObj.setJSONArray("parts", parts);
@@ -175,8 +182,11 @@ int fetchGeminiImpact(String title, String key) {
     JSONObject content = firstCandidate.getJSONObject("content");
     JSONArray outParts = content.getJSONArray("parts");
     String text = outParts.getJSONObject(0).getString("text").trim();
-
-    return int(text);
+    if (text.startsWith("```json")) text = text.substring(7, text.length() - 3).trim();
+    else if (text.startsWith("```")) text = text.substring(3, text.length() - 3).trim();
+    
+    JSONObject res = parseJSONObject(text);
+    return new int[]{res.getInt("social", 50), res.getInt("economic", 0)};
   }
   catch (Exception e) {
     println("Gemini fetch error: " + e.getMessage());
@@ -196,7 +206,7 @@ int fetchGeminiImpact(String title, String key) {
       catch (Exception ex) {
       }
     }
-    return 0;
+    return new int[]{50, 0};
   }
 }
 
