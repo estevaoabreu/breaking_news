@@ -23,6 +23,9 @@ JSONArray cachedArticles = null;
 int cachedTotalResults = 0;
 int currentArticleIndex = 0;
 
+float newBlobHue, newBlobPx, newBlobPy, newBlobRad, newBlobVx, newBlobVy, newBlobDeform;
+boolean spawnNewBlob = false;
+
 void fetchPortugalData() {
   try {
     if (apiKey.equals("") || geminiApiKey.equals("")) {
@@ -83,29 +86,18 @@ void fetchPortugalData() {
           newsImpactScore = random(100);
       }
 
-      if (posx.size() >= 200) {
-        posx.clear();
-        posy.clear();
-        radiuses.clear();
-        velx.clear();
-        vely.clear();
-        colors.clear();
-        clearLeftScreen = true;
-      }
-      
-      float hue = map(newsImpactScore, 0, 100, 0.5f, 0.833f);
-      int trailColor = java.awt.Color.HSBtoRGB(hue, 1.0f, 1.0f);
-      colors.append(trailColor);
-      posx.append(random(leftW));
-      posy.append(random(ledsH));
-      radiuses.append(random(0.2, 1.5));
+      newBlobHue = random(1.0f);
+      newBlobPx = random(leftW);
+      newBlobPy = random(ledsH);
+      newBlobRad = random(2.0f, 6.0f);
       
       float currentSpeed = map(newsImpactScore, 0, 100, 0, 3);
       float angle = random(TWO_PI);
-      velx.append(cos(angle) * currentSpeed);
-      vely.append(sin(angle) * currentSpeed);
+      newBlobVx = cos(angle) * currentSpeed;
+      newBlobVy = sin(angle) * currentSpeed;
+      newBlobDeform = map(newsImpactScore, 0, 100, 0.0f, 0.8f);
       
-      totalApiResults = posx.size();
+      spawnNewBlob = true;
 
       if (!selectedArticle.isNull("publishedAt")) {
         String publishedAt = selectedArticle.getString("publishedAt");
@@ -121,10 +113,13 @@ void fetchPortugalData() {
       publishedHour = 0;
       publishedMinute = 0;
       publishedSecond = 0;
-      colors = new IntList();
+      hues = new FloatList();
       posx = new FloatList();
       posy = new FloatList();
       radiuses = new FloatList();
+      velx = new FloatList();
+      vely = new FloatList();
+      deformations = new FloatList();
       totalApiResults = 0;
     }
   }

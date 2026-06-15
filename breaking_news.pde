@@ -11,12 +11,13 @@ boolean waitingForNews = false;
 int marqueeCount = 0;
 boolean clearLeftScreen = false;
 
-IntList colors = new IntList();
+FloatList hues = new FloatList();
 FloatList posx = new FloatList();
 FloatList posy = new FloatList();
 FloatList radiuses = new FloatList();
 FloatList velx = new FloatList();
 FloatList vely = new FloatList();
+FloatList deformations = new FloatList();
 
 void settings() {
   float scaling = 10;
@@ -38,6 +39,22 @@ void draw() {
     titleX = rightW;
     waitingForNews = false;
     newDataAvailable = false;
+    
+    if (spawnNewBlob) {
+      if (posx.size() >= 200) {
+        posx.clear(); posy.clear(); radiuses.clear();
+        velx.clear(); vely.clear(); hues.clear(); deformations.clear();
+      }
+      hues.append(newBlobHue);
+      posx.append(newBlobPx);
+      posy.append(newBlobPy);
+      radiuses.append(newBlobRad);
+      velx.append(newBlobVx);
+      vely.append(newBlobVy);
+      deformations.append(newBlobDeform);
+      totalApiResults = posx.size();
+      spawnNewBlob = false;
+    }
   }
 
   pg.beginDraw();
@@ -65,22 +82,17 @@ void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
   pg.pushMatrix();
   pg.translate(x, y);
 
-  if (clearLeftScreen) {
-    pg.fill(12);
-    pg.noStroke();
-    pg.rect(0, 0, w, h);
-    clearLeftScreen = false;
-  }
+  // Clear every frame since these are discrete objects, not trails
+  pg.fill(12);
+  pg.noStroke();
+  pg.rect(0, 0, w, h);
 
   if (totalApiResults > 0) {
+    // 1. Update Physics and Hue gradients
     for (int i=0; i<totalApiResults; i++) {
       float px = posx.get(i) + velx.get(i);
       float py = posy.get(i) + vely.get(i);
-      float d = radiuses.get(i);
-      float r = d / 2;
-      
-      float oldX = posx.get(i);
-      float oldY = posy.get(i);
+      float r = radiuses.get(i);
       
       if (px - r < 0) {
         px = r;
@@ -101,15 +113,66 @@ void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
       posx.set(i, px);
       posy.set(i, py);
       
-      pg.stroke(colors.get(i));
-      pg.strokeWeight(d);
-      pg.strokeCap(ROUND);
-      pg.line(oldX, oldY, px, py);
-      
-      pg.noStroke();
-      pg.fill(colors.get(i));
-      pg.circle(px, py, d);
+      float hVal = hues.get(i) + 0.001f;
+      if (hVal > 1.0f) hVal -= 1.0f;
+      hues.set(i, hVal);
     }
+    
+    // 2. Render Metaballs
+    pg.loadPixels();
+    for (int py = 0; py < h; py++) {
+      for (int px = 0; px < w; px++) {
+        float sum = 0;
+        float rSum = 0;
+        float gSum = 0;
+        float bSum = 0;
+        
+        for (int i = 0; i < totalApiResults; i++) {
+          float bx = posx.get(i);
+          float by = posy.get(i);
+          float radius = radiuses.get(i) * 3.0f; // Scale up for metaball overlap
+          
+          float dx = px - bx;
+          float dy = py - by;
+          
+          float blobAngle = atan2(dy, dx);
+          float time = millis() * 0.001f;
+          float distFactor = 
+              sin(blobAngle * 2.0f + time * 1.5f + i) * 0.5f +
+              cos(blobAngle * 3.0f - time * 2.0f + i) * 0.3f +
+              sin(blobAngle * 5.0f + time * 1.2f + i) * 0.2f;
+              
+          float distortion = 1.0f + deformations.get(i) * distFactor;
+          float distSq = (dx*dx + dy*dy) * distortion;
+          
+          if (distSq > 0) {
+            float influence = (radius * radius) / distSq;
+            sum += influence;
+            
+            if (influence > 0.01f) {
+              int c = java.awt.Color.HSBtoRGB(hues.get(i), 1.0f, 1.0f);
+              float rCol = (c >> 16) & 0xFF;
+              float gCol = (c >> 8) & 0xFF;
+              float bCol = c & 0xFF;
+              
+              rSum += rCol * influence;
+              gSum += gCol * influence;
+              bSum += bCol * influence;
+            }
+          }
+        }
+        
+        if (sum >= 1.0f) {
+          int rCol = min(255, (int)(rSum / sum));
+          int gCol = min(255, (int)(gSum / sum));
+          int bCol = min(255, (int)(bSum / sum));
+          
+          int pIndex = (int)(px + x) + (int)(py + y) * pg.width;
+          pg.pixels[pIndex] = color(rCol, gCol, bCol);
+        }
+      }
+    }
+    pg.updatePixels();
   }
   pg.popMatrix();
 }
