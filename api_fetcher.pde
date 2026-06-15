@@ -94,16 +94,11 @@ void fetchPortugalData() {
           currentTitle = currentTitle.replaceAll("&#[0-9]+;", "");
           currentTitle = currentTitle.replaceAll("[^\\x20-\\x7E\\u00A0-\\u00FF]", "");
         }  
-        if (selectedArticle.hasKey("category") && !selectedArticle.isNull("category")) {
-          newBlobCategory = selectedArticle.getString("category");
-        } else {
-          newBlobCategory = "Other";
-        }
-        
         if (!geminiApiKey.equals("")) {
           JSONObject scores = fetchGeminiImpact(currentTitle, geminiApiKey);
           socialScore = scores.getInt("social", 50);
           economicScore = scores.getInt("economic", 50);
+          newBlobCategory = scores.getString("category", "Other");
           newsImpactScore = economicScore;
           println("Social Impact: " + socialScore + " | Economic Impact: " + economicScore + " | Category: " + newBlobCategory);
         } else {
@@ -176,7 +171,7 @@ JSONObject fetchGeminiImpact(String title, String key) {
     JSONArray parts = new JSONArray();
     JSONObject part = new JSONObject();
 
-    String prompt = "For this news title: \"" + title + "\", give me two values. 1) 'social': social impact from 0 (very negative) to 100 (very positive), where 50 is neutral. 2) 'economic': economic impact from 0 to 100. Reply ONLY in JSON format like {\"social\": 50, \"economic\": 20}.";
+    String prompt = "For this news title: \"" + title + "\", give me three values. 1) 'social': social impact from 0 (very negative) to 100 (very positive), where 50 is neutral. 2) 'economic': economic impact from 0 to 100. 3) 'category': the main category of the news. You MUST choose ONLY from this exact list: [Politics, Sports, Business, Technology, Entertainment, Health, Science, Lifestyle, Travel, Culture, Education, Environment, Other]. Reply ONLY in JSON format like {\"social\": 50, \"economic\": 20, \"category\": \"Politics\"}.";
     part.setString("text", prompt);
     parts.append(part);
     contentObj.setJSONArray("parts", parts);
@@ -230,6 +225,7 @@ JSONObject fetchGeminiImpact(String title, String key) {
     JSONObject fallback = new JSONObject();
     fallback.setInt("social", 50);
     fallback.setInt("economic", 0);
+    fallback.setString("category", "Other");
     return fallback;
   }
 }

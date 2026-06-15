@@ -245,7 +245,7 @@ void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
           float by = posy.get(i);
           
           float pulse = 1.0f + 0.15f * sin(millis() * 0.005f + i);
-          float radius = radiuses.get(i) * pulse * 3.0f;
+          float radius = radiuses.get(i) * pulse * 1.5f;
           
           float dx = px - bx;
           float dy = py - by;
