@@ -5,7 +5,7 @@ import java.io.InputStreamReader;
 import java.io.BufferedReader;
 
 String apiKey = "";
-String coimbraUrl = "https://api.worldnewsapi.com/search-news?text=Coimbra&language=pt&api-key=";
+String coimbraUrl = "https://api.worldnewsapi.com/search-news?source-countries=pt&api-key=";
 
 String currentTitle = "A carregar dados locais...";
 boolean newDataAvailable = false;
@@ -81,21 +81,34 @@ void fetchPortugalData() {
   
         currentTitle = selectedArticle.getString("title");
         if (currentTitle != null) {
-          currentTitle = java.text.Normalizer.normalize(currentTitle, java.text.Normalizer.Form.NFD)
-            .replaceAll("\\p{InCombiningDiacriticalMarks}+", "").toUpperCase();
+          currentTitle = currentTitle.replaceAll("&quot;", "\"")
+                                     .replaceAll("&amp;", "&")
+                                     .replaceAll("&#39;", "'")
+                                     .replaceAll("&apos;", "'")
+                                     .replaceAll("&lt;", "<")
+                                     .replaceAll("&gt;", ">")
+                                     .replaceAll("&nbsp;", " ")
+                                     .replaceAll("[\u2018\u2019]", "'")
+                                     .replaceAll("[\u201C\u201D]", "\"")
+                                     .replaceAll("[\u2013\u2014]", "-");
+          currentTitle = currentTitle.replaceAll("&#[0-9]+;", "");
+          currentTitle = currentTitle.replaceAll("[^\\x20-\\x7E\\u00A0-\\u00FF]", "");
+        }  
+        if (selectedArticle.hasKey("category") && !selectedArticle.isNull("category")) {
+          newBlobCategory = selectedArticle.getString("category");
+        } else {
+          newBlobCategory = "Other";
         }
-  
+        
         if (!geminiApiKey.equals("")) {
           JSONObject scores = fetchGeminiImpact(currentTitle, geminiApiKey);
           socialScore = scores.getInt("social", 50);
           economicScore = scores.getInt("economic", 50);
-          newBlobCategory = scores.getString("category", "Geral");
           newsImpactScore = economicScore;
           println("Social Impact: " + socialScore + " | Economic Impact: " + economicScore + " | Category: " + newBlobCategory);
         } else {
           socialScore = (int)random(100);
           economicScore = (int)random(100);
-          newBlobCategory = "Geral";
           newsImpactScore = economicScore;
         }
         
@@ -107,12 +120,13 @@ void fetchPortugalData() {
       }
 
       if (foundValidArticle && selectedArticle != null) {
-        newBlobHue = random(1.0f);
-        newBlobTargetHue = map(socialScore, 0, 100, 0.0f, 0.33f);
+        textSocialHue = map(socialScore, 0, 100, 0.0f, 0.33f);
+        newBlobHue = getCategoryHue(newBlobCategory);
+        newBlobTargetHue = newBlobHue;
         newBlobPx = random(leftW);
         newBlobPy = random(ledsH);
         newBlobSpeed = random(0.05f, 0.2f);
-        newBlobRad = map(economicScore, 0, 100, 1.0f, 4.0f);
+        newBlobRad = map(economicScore, 0, 100, 4.0f, 12.0f);
         
         float angle = random(TWO_PI);
         newBlobVx = cos(angle) * newBlobSpeed;
@@ -162,7 +176,7 @@ JSONObject fetchGeminiImpact(String title, String key) {
     JSONArray parts = new JSONArray();
     JSONObject part = new JSONObject();
 
-    String prompt = "For this news title: \"" + title + "\", give me three values. 1) 'social': social impact from 0 (very negative) to 100 (very positive), where 50 is neutral. 2) 'economic': economic impact from 0 to 100. 3) 'category': the main category of the news (e.g. 'Política', 'Desporto', 'Local', 'Crime') as a short string. Reply ONLY in JSON format like {\"social\": 50, \"economic\": 20, \"category\": \"Local\"}.";
+    String prompt = "For this news title: \"" + title + "\", give me two values. 1) 'social': social impact from 0 (very negative) to 100 (very positive), where 50 is neutral. 2) 'economic': economic impact from 0 to 100. Reply ONLY in JSON format like {\"social\": 50, \"economic\": 20}.";
     part.setString("text", prompt);
     parts.append(part);
     contentObj.setJSONArray("parts", parts);
@@ -216,7 +230,6 @@ JSONObject fetchGeminiImpact(String title, String key) {
     JSONObject fallback = new JSONObject();
     fallback.setInt("social", 50);
     fallback.setInt("economic", 0);
-    fallback.setString("category", "Geral");
     return fallback;
   }
 }
@@ -240,4 +253,21 @@ JSONArray filterRecent(JSONArray articles, int hours) {
     }
   }
   return recent;
+}
+
+float getCategoryHue(String cat) {
+  cat = cat.trim().toLowerCase();
+  if (cat.equals("politics")) return 0.00f; 
+  if (cat.equals("sports")) return 0.08f; 
+  if (cat.equals("business")) return 0.16f; 
+  if (cat.equals("technology")) return 0.50f; 
+  if (cat.equals("entertainment")) return 0.83f; 
+  if (cat.equals("health")) return 0.33f; 
+  if (cat.equals("science")) return 0.66f; 
+  if (cat.equals("lifestyle")) return 0.91f; 
+  if (cat.equals("travel")) return 0.12f; 
+  if (cat.equals("culture")) return 0.75f; 
+  if (cat.equals("education")) return 0.58f; 
+  if (cat.equals("environment")) return 0.25f; 
+  return 0.88f; 
 }

@@ -23,10 +23,12 @@ float rightPad = 5;
 float lineGap = 2;
 int articleDelayTimer = 0;
 int timeBetweenArticles = 180;
+float textKerning = 1.0f;
 
 FloatList hues = new FloatList();
 FloatList targetHues = new FloatList();
 StringList blobCategories = new StringList();
+float textSocialHue = 0.0f;
 FloatList posx = new FloatList();
 FloatList posy = new FloatList();
 FloatList radiuses = new FloatList();
@@ -50,7 +52,7 @@ void setup() {
   
   textMask = createGraphics(ledsW, ledsH);
   customFont = createFont("font/DS-DIGI.TTF", 12);
-  defaultFont = createFont("Arial", 9);
+  defaultFont = createFont("Arial", 10);
   
   thread("fetchPortugalData");
 }
@@ -338,10 +340,10 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
   pg.noStroke();
   pg.rect(0, 0, w, h);
   pg.textFont(defaultFont);
-  pg.textSize(9);
+  pg.textSize(10);
   pg.textAlign(LEFT, TOP);
 
-  int cCol = java.awt.Color.HSBtoRGB(newBlobTargetHue, 1.0f, 1.0f);
+  int cCol = java.awt.Color.HSBtoRGB(textSocialHue, 1.0f, 1.0f);
   pg.fill(color((cCol >> 16) & 0xFF, (cCol >> 8) & 0xFF, cCol & 0xFF));
 
   if (!waitingForNews && currentTitle != null) {
@@ -355,7 +357,7 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
         if (c == '\n') {
           visibleLines.append("");
         } else {
-          appendTypedChar(pg, Character.toUpperCase(c), w - rightPad * 2, h);
+          appendTypedChar(pg, c, w - rightPad * 2, h);
         }
       }
     }
@@ -380,13 +382,13 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
     for (int i = 0; i < visibleLines.size(); i++) {
       float yy = startY + i * lineH;
       if (yy > h) continue;
-      pg.text(visibleLines.get(i), rightPad, yy);
+      drawKernedText(pg, visibleLines.get(i), rightPad, yy, textKerning);
     }
 
     if (cursorOn && visibleLines.size() > 0 && !waitingForNews) {
       int lastLine = visibleLines.size() - 1;
       String last = visibleLines.get(lastLine);
-      float cursorX = rightPad + pg.textWidth(last);
+      float cursorX = rightPad + getKernedTextWidth(pg, last, textKerning);
       float cursorY = startY + lastLine * lineH;
       if (cursorY <= h - lineH) {
         pg.text("|", cursorX, cursorY);
@@ -409,7 +411,7 @@ void appendTypedChar(PGraphics pg, char c, float maxW, float maxH) {
   if (visibleLines.size() == 0) visibleLines.append("");
   int lastIdx = visibleLines.size() - 1;
   String line = visibleLines.get(lastIdx);
-  if (pg.textWidth(line + c) > maxW) {
+  if (getKernedTextWidth(pg, line + c, textKerning) > maxW) {
     if (c == ' ') {
       visibleLines.append("");
     } else {
@@ -425,4 +427,22 @@ void appendTypedChar(PGraphics pg, char c, float maxW, float maxH) {
   } else {
     visibleLines.set(lastIdx, line + c);
   }
+}
+
+void drawKernedText(PGraphics pg, String s, float x, float y, float kerning) {
+  float currX = x;
+  for (int i = 0; i < s.length(); i++) {
+    char c = s.charAt(i);
+    pg.text(c, currX, y);
+    currX += pg.textWidth(c) + kerning;
+  }
+}
+
+float getKernedTextWidth(PGraphics pg, String s, float kerning) {
+  float w = 0;
+  for (int i = 0; i < s.length(); i++) {
+    w += pg.textWidth(s.charAt(i));
+    if (i < s.length() - 1) w += kerning;
+  }
+  return w;
 }
