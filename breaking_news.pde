@@ -5,6 +5,7 @@ int ledsH = 24;
 int leftW = 275;
 int rightW = 75;
 int marqueeIterations = 1;
+int blobLimit = 100;
 
 float titleX = rightW;
 boolean waitingForNews = false;
@@ -18,6 +19,7 @@ FloatList radiuses = new FloatList();
 FloatList velx = new FloatList();
 FloatList vely = new FloatList();
 FloatList deformations = new FloatList();
+FloatList baseSpeeds = new FloatList();
 
 void settings() {
   float scaling = 10;
@@ -41,9 +43,9 @@ void draw() {
     newDataAvailable = false;
     
     if (spawnNewBlob) {
-      if (posx.size() >= 200) {
+      if (posx.size() >= blobLimit) {
         posx.clear(); posy.clear(); radiuses.clear();
-        velx.clear(); vely.clear(); hues.clear(); deformations.clear();
+        velx.clear(); vely.clear(); hues.clear(); deformations.clear(); baseSpeeds.clear();
       }
       hues.append(newBlobHue);
       posx.append(newBlobPx);
@@ -52,6 +54,7 @@ void draw() {
       velx.append(newBlobVx);
       vely.append(newBlobVy);
       deformations.append(newBlobDeform);
+      baseSpeeds.append(newBlobSpeed);
       totalApiResults = posx.size();
       spawnNewBlob = false;
     }
@@ -88,10 +91,83 @@ void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
   pg.rect(0, 0, w, h);
 
   if (totalApiResults > 0) {
-    // 1. Update Physics and Hue gradients
+    // 1. Calculate Boids acceleration (Flocking)
+    FloatList accx = new FloatList();
+    FloatList accy = new FloatList();
     for (int i=0; i<totalApiResults; i++) {
-      float px = posx.get(i) + velx.get(i);
-      float py = posy.get(i) + vely.get(i);
+        accx.append(0); accy.append(0);
+    }
+    
+    float separationDist = 20.0f; 
+    float perceptionDist = 40.0f;
+    
+    for (int i=0; i<totalApiResults; i++) {
+      float steerX = 0, steerY = 0;
+      float alignX = 0, alignY = 0;
+      float cohX = 0, cohY = 0;
+      int countSep = 0, countAlign = 0, countCoh = 0;
+      
+      float pxi = posx.get(i); float pyi = posy.get(i);
+      
+      for (int j=0; j<totalApiResults; j++) {
+        if (i == j) continue;
+        float pxj = posx.get(j); float pyj = posy.get(j);
+        float d = dist(pxi, pyi, pxj, pyj);
+        
+        if (d > 0 && d < separationDist) {
+          float diffX = pxi - pxj;
+          float diffY = pyi - pyj;
+          diffX /= d; diffY /= d;
+          steerX += diffX; steerY += diffY;
+          countSep++;
+        }
+        if (d > 0 && d < perceptionDist) {
+          alignX += velx.get(j); alignY += vely.get(j);
+          countAlign++;
+          cohX += pxj; cohY += pyj;
+          countCoh++;
+        }
+      }
+      
+      float ax = 0, ay = 0;
+      if (countSep > 0) {
+        steerX /= countSep; steerY /= countSep;
+        ax += steerX * 0.05f;
+        ay += steerY * 0.05f;
+      }
+      if (countAlign > 0) {
+        alignX /= countAlign; alignY /= countAlign;
+        ax += (alignX - velx.get(i)) * 0.01f;
+        ay += (alignY - vely.get(i)) * 0.01f;
+      }
+      if (countCoh > 0) {
+        cohX /= countCoh; cohY /= countCoh;
+        float desiredVX = cohX - pxi; float desiredVY = cohY - pyi;
+        float speed = dist(0, 0, desiredVX, desiredVY);
+        if (speed > 0) { desiredVX /= speed; desiredVY /= speed; }
+        ax += (desiredVX - velx.get(i)) * 0.005f;
+        ay += (desiredVY - vely.get(i)) * 0.005f;
+      }
+      
+      accx.set(i, ax);
+      accy.set(i, ay);
+    }
+
+    // 2. Update Physics and Hue gradients
+    for (int i=0; i<totalApiResults; i++) {
+      float vx = velx.get(i) + accx.get(i);
+      float vy = vely.get(i) + accy.get(i);
+      
+      float speedMag = dist(0, 0, vx, vy);
+      float mySpeed = baseSpeeds.get(i);
+      if (speedMag > 0) {
+        vx = (vx / speedMag) * mySpeed;
+        vy = (vy / speedMag) * mySpeed;
+      }
+      velx.set(i, vx); vely.set(i, vy);
+      
+      float px = posx.get(i) + vx;
+      float py = posy.get(i) + vy;
       float r = radiuses.get(i);
       
       if (px - r < 0) {
@@ -130,7 +206,9 @@ void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
         for (int i = 0; i < totalApiResults; i++) {
           float bx = posx.get(i);
           float by = posy.get(i);
-          float radius = radiuses.get(i) * 3.0f; // Scale up for metaball overlap
+          
+          float pulse = 1.0f + 0.15f * sin(millis() * 0.005f + i);
+          float radius = radiuses.get(i) * pulse * 3.0f; // Scale up for metaball overlap
           
           float dx = px - bx;
           float dy = py - by;

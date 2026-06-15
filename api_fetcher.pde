@@ -23,7 +23,7 @@ JSONArray cachedArticles = null;
 int cachedTotalResults = 0;
 int currentArticleIndex = 0;
 
-float newBlobHue, newBlobPx, newBlobPy, newBlobRad, newBlobVx, newBlobVy, newBlobDeform;
+float newBlobHue, newBlobPx, newBlobPy, newBlobRad, newBlobVx, newBlobVy, newBlobDeform, newBlobSpeed;
 boolean spawnNewBlob = false;
 
 void fetchPortugalData() {
@@ -89,12 +89,12 @@ void fetchPortugalData() {
       newBlobHue = random(1.0f);
       newBlobPx = random(leftW);
       newBlobPy = random(ledsH);
-      newBlobRad = random(2.0f, 6.0f);
+      newBlobSpeed = random(0.5f, 2.0f);
+      newBlobRad = map(newsImpactScore, 0, 100, 2.0f, 8.0f);
       
-      float currentSpeed = map(newsImpactScore, 0, 100, 0, 3);
       float angle = random(TWO_PI);
-      newBlobVx = cos(angle) * currentSpeed;
-      newBlobVy = sin(angle) * currentSpeed;
+      newBlobVx = cos(angle) * newBlobSpeed;
+      newBlobVy = sin(angle) * newBlobSpeed;
       newBlobDeform = map(newsImpactScore, 0, 100, 0.0f, 0.8f);
       
       spawnNewBlob = true;
@@ -120,6 +120,7 @@ void fetchPortugalData() {
       velx = new FloatList();
       vely = new FloatList();
       deformations = new FloatList();
+      baseSpeeds = new FloatList();
       totalApiResults = 0;
     }
   }
