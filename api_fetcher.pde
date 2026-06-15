@@ -70,17 +70,26 @@ void fetchPortugalData() {
     FloatList tempPosx = new FloatList();
     FloatList tempPosy = new FloatList();
     FloatList tempRadiuses = new FloatList();
+    FloatList tempVelx = new FloatList();
+    FloatList tempVely = new FloatList();
     for (int i=0; i<circlesToDraw; i++) {
       tempcolors.append(color(random(255), random(255), random(255)));
       tempPosx.append(random(leftW));
       tempPosy.append(random(ledsH));
-      tempRadiuses.append((float)(leftW*ledsH)/circlesToDraw/4);
+      tempRadiuses.append(random(1, 3));
+      
+      float angle = random(TWO_PI);
+      float speed = 1.0;
+      tempVelx.append(cos(angle) * speed);
+      tempVely.append(sin(angle) * speed);
     }
 
     colors = tempcolors;
     posx = tempPosx;
     posy = tempPosy;
     radiuses = tempRadiuses;
+    velx = tempVelx;
+    vely = tempVely;
     totalApiResults = circlesToDraw;
 
     if (cachedArticles != null && cachedArticles.size() > 0 && currentArticleIndex < cachedArticles.size()) {

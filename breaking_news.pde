@@ -13,6 +13,8 @@ IntList colors = new IntList();
 FloatList posx = new FloatList();
 FloatList posy = new FloatList();
 FloatList radiuses = new FloatList();
+FloatList velx = new FloatList();
+FloatList vely = new FloatList();
 
 void settings() {
   float scaling = 10;
@@ -34,8 +36,7 @@ void draw() {
   }
 
   pg.beginDraw();
-  pg.background(0);
-
+  
   drawLeftScreen(pg, 0, 0, leftW, ledsH);
   drawRightScreen(pg, leftW, 0, rightW, ledsH);
 
@@ -58,17 +59,39 @@ void draw() {
 void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
   pg.pushMatrix();
   pg.translate(x, y);
-  pg.fill(20);
+  pg.fill(20, 60); // Alpha for trails effect
   pg.noStroke();
   pg.rect(0, 0, w, h);
 
   if (totalApiResults > 0) {
     for (int i=0; i<totalApiResults; i++) {
-      if (random(1)>0.5)
-        radiuses.add(i, map(newsImpactScore,0,100,0,3));
-      else radiuses.sub(i, map(newsImpactScore,0,100,0,3));
+      float currentSpeed = map(newsImpactScore, 0, 100, 0.5, 3);
+      float px = posx.get(i) + velx.get(i) * currentSpeed;
+      float py = posy.get(i) + vely.get(i) * currentSpeed;
+      float d = radiuses.get(i);
+      float r = d / 2;
+      
+      if (px - r < 0) {
+        px = r;
+        velx.set(i, abs(velx.get(i)));
+      } else if (px + r > w) {
+        px = w - r;
+        velx.set(i, -abs(velx.get(i)));
+      }
+      
+      if (py - r < 0) {
+        py = r;
+        vely.set(i, abs(vely.get(i)));
+      } else if (py + r > h) {
+        py = h - r;
+        vely.set(i, -abs(vely.get(i)));
+      }
+      
+      posx.set(i, px);
+      posy.set(i, py);
+      
       pg.fill(colors.get(i));
-      pg.circle(posx.get(i), posy.get(i), radiuses.get(i));
+      pg.circle(px, py, d);
     }
   }
   pg.popMatrix();
@@ -81,7 +104,7 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
   pg.fill(12);
   pg.noStroke();
   pg.rect(0, 0, w, h);
-  pg.fill(245);
+  pg.fill(color(map(newsImpactScore,0,100,0,255), map(newsImpactScore,0,100,255,0), 0));
   pg.textSize(12);
   pg.textAlign(LEFT, CENTER);
 
@@ -91,7 +114,7 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
 
   if (!waitingForNews) {
     titleX -= titleSpeed;
-    if (titleX < -titleW*1.1) {
+    if (titleX < -titleW*1.2) {
       marqueeCount++;
       if (marqueeCount >= 3) {
         titleX = w;
