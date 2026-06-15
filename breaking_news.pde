@@ -360,6 +360,13 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
       }
     }
 
+    if (typeIndex >= currentTitle.length()) {
+      waitingForNews = true;
+      articleDelayTimer = timeBetweenArticles;
+    }
+  }
+
+  if (currentTitle != null) {
     if (frameCount % cursorBlinkRate == 0) {
       cursorOn = !cursorOn;
     }
@@ -376,7 +383,7 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
       pg.text(visibleLines.get(i), rightPad, yy);
     }
 
-    if (cursorOn && visibleLines.size() > 0) {
+    if (cursorOn && visibleLines.size() > 0 && !waitingForNews) {
       int lastLine = visibleLines.size() - 1;
       String last = visibleLines.get(lastLine);
       float cursorX = rightPad + pg.textWidth(last);
@@ -384,11 +391,6 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
       if (cursorY <= h - lineH) {
         pg.text("|", cursorX, cursorY);
       }
-    }
-
-    if (typeIndex >= currentTitle.length()) {
-      waitingForNews = true;
-      articleDelayTimer = timeBetweenArticles;
     }
   }
   
