@@ -18,9 +18,10 @@ String geminiApiKey = "";
 int publishedHour = 0;
 int publishedMinute = 0;
 int publishedSecond = 0;
-IntList cores = new IntList();
-FloatList posx = new FloatList();
-FloatList posy = new FloatList();
+
+JSONArray cachedArticles = null;
+int cachedTotalResults = 0;
+int currentArticleIndex = 0;
 
 void fetchPortugalData() {
   try {
@@ -35,48 +36,56 @@ void fetchPortugalData() {
       }
     }
 
-    JSONObject json = loadJSONObject(coimbraUrl);
-    JSONArray articles = null;
-    int fetchedTotal = 0;
-
-    if (json != null && json.getString("status").equals("ok")) {
-      if (!json.isNull("totalResults")) fetchedTotal = json.getInt("totalResults");
-      articles = json.getJSONArray("articles");
-    }
-
-    if (articles == null || articles.size() == 0) {
-      json = loadJSONObject(portugalUrl);
+    if (cachedArticles == null || cachedArticles.size() == 0 || currentArticleIndex >= cachedArticles.size()) {
+      JSONObject json = loadJSONObject(coimbraUrl);
+      int fetchedTotal = 0;
+  
       if (json != null && json.getString("status").equals("ok")) {
         if (!json.isNull("totalResults")) fetchedTotal = json.getInt("totalResults");
-        articles = json.getJSONArray("articles");
+        cachedArticles = json.getJSONArray("articles");
       }
+  
+      if (cachedArticles == null || cachedArticles.size() == 0) {
+        json = loadJSONObject(portugalUrl);
+        if (json != null && json.getString("status").equals("ok")) {
+          if (!json.isNull("totalResults")) fetchedTotal = json.getInt("totalResults");
+          cachedArticles = json.getJSONArray("articles");
+        }
+      }
+  
+      if (cachedArticles == null || cachedArticles.size() == 0) {
+        json = loadJSONObject(worldUrl);
+        if (json != null && json.getString("status").equals("ok")) {
+          if (!json.isNull("totalResults")) fetchedTotal = json.getInt("totalResults");
+          cachedArticles = json.getJSONArray("articles");
+        }
+      }
+      cachedTotalResults = fetchedTotal;
+      currentArticleIndex = 0;
     }
 
-    if (articles == null || articles.size() == 0) {
-      json = loadJSONObject(worldUrl);
-      if (json != null && json.getString("status").equals("ok")) {
-        if (!json.isNull("totalResults")) fetchedTotal = json.getInt("totalResults");
-        articles = json.getJSONArray("articles");
-      }
-    }
+    int circlesToDraw = Math.min(cachedTotalResults, 150);
 
-    IntList tempCores = new IntList();
+    IntList tempcolors = new IntList();
     FloatList tempPosx = new FloatList();
     FloatList tempPosy = new FloatList();
-    for (int i=0; i<fetchedTotal; i++) {
-      tempCores.append(color(random(255), random(255), random(255)));
+    FloatList tempRadiuses = new FloatList();
+    for (int i=0; i<circlesToDraw; i++) {
+      tempcolors.append(color(random(255), random(255), random(255)));
       tempPosx.append(random(leftW));
       tempPosy.append(random(ledsH));
+      tempRadiuses.append((float)(leftW*ledsH)/circlesToDraw/4);
     }
-    
-    cores = tempCores;
+
+    colors = tempcolors;
     posx = tempPosx;
     posy = tempPosy;
-    totalApiResults = fetchedTotal;
+    radiuses = tempRadiuses;
+    totalApiResults = circlesToDraw;
 
-    if (articles != null && articles.size() > 0) {
-      int randomIndex = int(random(articles.size()));
-      JSONObject selectedArticle = articles.getJSONObject(randomIndex);
+    if (cachedArticles != null && cachedArticles.size() > 0 && currentArticleIndex < cachedArticles.size()) {
+      JSONObject selectedArticle = cachedArticles.getJSONObject(currentArticleIndex);
+      currentArticleIndex++;
 
       currentTitle = selectedArticle.getString("title");
 
@@ -84,7 +93,7 @@ void fetchPortugalData() {
         newsImpactScore = fetchGeminiImpact(currentTitle, geminiApiKey);
         println("News Impact Score: " + newsImpactScore);
         if (newsImpactScore == 0)
-        newsImpactScore = random(100);
+          newsImpactScore = random(100);
       }
 
       if (!selectedArticle.isNull("publishedAt")) {
@@ -101,9 +110,10 @@ void fetchPortugalData() {
       publishedHour = 0;
       publishedMinute = 0;
       publishedSecond = 0;
-      cores = new IntList();
+      colors = new IntList();
       posx = new FloatList();
       posy = new FloatList();
+      radiuses = new FloatList();
       totalApiResults = 0;
     }
   }
@@ -175,7 +185,9 @@ int fetchGeminiImpact(String title, String key) {
           }
           println("Error body: " + response.toString());
         }
-      } catch (Exception ex) {}
+      }
+      catch (Exception ex) {
+      }
     }
     return 0;
   }

@@ -7,6 +7,12 @@ int rightW = 75;
 
 float titleX = rightW;
 boolean waitingForNews = false;
+int marqueeCount = 0;
+
+IntList colors = new IntList();
+FloatList posx = new FloatList();
+FloatList posy = new FloatList();
+FloatList radiuses = new FloatList();
 
 void settings() {
   float scaling = 10;
@@ -38,11 +44,12 @@ void draw() {
   background(0);
   noStroke();
   float cellDim = 0.9 * (width / (float) pg.width);
+  pg.loadPixels();
   for (int y = 0; y < pg.height; y++) {
     float cY = map(y + 0.5, 0, pg.height, 0, height);
     for (int x = 0; x < pg.width; x++) {
       float cX = map(x + 0.5, 0, pg.width, 0, width);
-      fill(pg.get(x, y));
+      fill(pg.pixels[x + y * pg.width]);
       circle(cX, cY, cellDim);
     }
   }
@@ -56,10 +63,12 @@ void drawLeftScreen(PGraphics pg, float x, float y, float w, float h) {
   pg.rect(0, 0, w, h);
 
   if (totalApiResults > 0) {
-    float piecesSize = (w*h)/totalApiResults;
     for (int i=0; i<totalApiResults; i++) {
-      pg.fill(cores.get(i));
-      pg.square(posx.get(i), posy.get(i), piecesSize);
+      if (random(1)>0.5)
+        radiuses.add(i, map(newsImpactScore,0,100,0,3));
+      else radiuses.sub(i, map(newsImpactScore,0,100,0,3));
+      pg.fill(colors.get(i));
+      pg.circle(posx.get(i), posy.get(i), radiuses.get(i));
     }
   }
   pg.popMatrix();
@@ -83,9 +92,15 @@ void drawRightScreen(PGraphics pg, float x, float y, float w, float h) {
   if (!waitingForNews) {
     titleX -= titleSpeed;
     if (titleX < -titleW*1.1) {
-      titleX = w;
-      waitingForNews = true;
-      thread("fetchPortugalData");
+      marqueeCount++;
+      if (marqueeCount >= 3) {
+        titleX = w;
+        waitingForNews = true;
+        marqueeCount = 0;
+        thread("fetchPortugalData");
+      } else {
+        titleX = w;
+      }
     }
   }
 
