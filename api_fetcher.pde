@@ -5,7 +5,7 @@ import java.io.InputStreamReader;
 import java.io.BufferedReader;
 
 String apiKey = "";
-String coimbraUrl = "https://newsapi.org/v2/everything?q=Coimbra&language=pt&sortBy=publishedAt&apiKey=";
+String coimbraUrl = "https://api.worldnewsapi.com/search-news?text=Coimbra&language=pt&api-key=";
 
 String currentTitle = "A carregar dados locais...";
 boolean newDataAvailable = false;
@@ -24,6 +24,7 @@ int cachedTotalResults = 0;
 int currentArticleIndex = 0;
 
 float newBlobHue, newBlobTargetHue, newBlobPx, newBlobPy, newBlobRad, newBlobVx, newBlobVy, newBlobDeform, newBlobSpeed;
+String newBlobCategory = "Geral";
 boolean spawnNewBlob = false;
 
 void fetchPortugalData() {
@@ -31,7 +32,7 @@ void fetchPortugalData() {
     if (apiKey.equals("") || geminiApiKey.equals("")) {
       JSONObject keys = loadJSONObject("api_keys.json");
       if (keys != null) {
-        apiKey = keys.getString("news_api_key");
+        apiKey = keys.getString("world_news_api_key");
         geminiApiKey = keys.getString("gemini_api_key");
         if (!coimbraUrl.endsWith(apiKey)) coimbraUrl += apiKey;
       }
@@ -45,9 +46,9 @@ void fetchPortugalData() {
         
         try {
           JSONObject jsonCoimbra = loadJSONObject(coimbraUrl);
-          if (jsonCoimbra != null && !jsonCoimbra.isNull("status") && jsonCoimbra.getString("status").equals("ok")) {
-            JSONArray coimbraAll = jsonCoimbra.getJSONArray("articles");
-            JSONArray recentCoimbra = filterRecent(coimbraAll, 72); // 72 hours because NewsAPI free tier delays 'everything' endpoint by 24h
+          if (jsonCoimbra != null && !jsonCoimbra.isNull("news")) {
+            JSONArray coimbraAll = jsonCoimbra.getJSONArray("news");
+            JSONArray recentCoimbra = filterRecent(coimbraAll, 72);
             for (int i = 0; i < recentCoimbra.size(); i++) cachedArticles.append(recentCoimbra.getJSONObject(i));
           }
         } catch (Exception e) { println("Coimbra fetch failed: " + e.getMessage()); }
@@ -79,16 +80,22 @@ void fetchPortugalData() {
         cachedArticles.remove(randomIndex);
   
         currentTitle = selectedArticle.getString("title");
+        if (currentTitle != null) {
+          currentTitle = java.text.Normalizer.normalize(currentTitle, java.text.Normalizer.Form.NFD)
+            .replaceAll("\\p{InCombiningDiacriticalMarks}+", "").toUpperCase();
+        }
   
         if (!geminiApiKey.equals("")) {
-          int[] scores = fetchGeminiImpact(currentTitle, geminiApiKey);
-          socialScore = scores[0];
-          economicScore = scores[1];
+          JSONObject scores = fetchGeminiImpact(currentTitle, geminiApiKey);
+          socialScore = scores.getInt("social", 50);
+          economicScore = scores.getInt("economic", 50);
+          newBlobCategory = scores.getString("category", "Geral");
           newsImpactScore = economicScore;
-          println("Social Impact: " + socialScore + " | Economic Impact: " + economicScore);
+          println("Social Impact: " + socialScore + " | Economic Impact: " + economicScore + " | Category: " + newBlobCategory);
         } else {
           socialScore = (int)random(100);
           economicScore = (int)random(100);
+          newBlobCategory = "Geral";
           newsImpactScore = economicScore;
         }
         
@@ -104,8 +111,8 @@ void fetchPortugalData() {
         newBlobTargetHue = map(socialScore, 0, 100, 0.0f, 0.33f);
         newBlobPx = random(leftW);
         newBlobPy = random(ledsH);
-        newBlobSpeed = random(0.25f, 1.0f);
-        newBlobRad = map(economicScore, 0, 100, 2.0f, 8.0f);
+        newBlobSpeed = random(0.05f, 0.2f);
+        newBlobRad = map(economicScore, 0, 100, 1.0f, 4.0f);
         
         float angle = random(TWO_PI);
         newBlobVx = cos(angle) * newBlobSpeed;
@@ -138,7 +145,7 @@ void fetchPortugalData() {
   }
 }
 
-int[] fetchGeminiImpact(String title, String key) {
+JSONObject fetchGeminiImpact(String title, String key) {
   HttpURLConnection con = null;
   try {
     URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=" + key);
@@ -155,7 +162,7 @@ int[] fetchGeminiImpact(String title, String key) {
     JSONArray parts = new JSONArray();
     JSONObject part = new JSONObject();
 
-    String prompt = "For this news title: \"" + title + "\", give me two numbers. 1) 'social': social impact from 0 (very negative) to 100 (very positive), where 50 is neutral. 2) 'economic': economic impact from 0 to 100. Reply ONLY in JSON format like {\"social\": 50, \"economic\": 20}.";
+    String prompt = "For this news title: \"" + title + "\", give me three values. 1) 'social': social impact from 0 (very negative) to 100 (very positive), where 50 is neutral. 2) 'economic': economic impact from 0 to 100. 3) 'category': the main category of the news (e.g. 'Política', 'Desporto', 'Local', 'Crime') as a short string. Reply ONLY in JSON format like {\"social\": 50, \"economic\": 20, \"category\": \"Local\"}.";
     part.setString("text", prompt);
     parts.append(part);
     contentObj.setJSONArray("parts", parts);
@@ -186,7 +193,7 @@ int[] fetchGeminiImpact(String title, String key) {
     else if (text.startsWith("```")) text = text.substring(3, text.length() - 3).trim();
     
     JSONObject res = parseJSONObject(text);
-    return new int[]{res.getInt("social", 50), res.getInt("economic", 0)};
+    return res;
   }
   catch (Exception e) {
     println("Gemini fetch error: " + e.getMessage());
@@ -206,7 +213,11 @@ int[] fetchGeminiImpact(String title, String key) {
       catch (Exception ex) {
       }
     }
-    return new int[]{50, 0};
+    JSONObject fallback = new JSONObject();
+    fallback.setInt("social", 50);
+    fallback.setInt("economic", 0);
+    fallback.setString("category", "Geral");
+    return fallback;
   }
 }
 
@@ -214,12 +225,12 @@ JSONArray filterRecent(JSONArray articles, int hours) {
   if (articles == null) return new JSONArray();
   JSONArray recent = new JSONArray();
   long threshold = System.currentTimeMillis() - (hours * 60L * 60L * 1000L);
-  java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+  java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
   sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
   for (int i = 0; i < articles.size(); i++) {
     JSONObject art = articles.getJSONObject(i);
-    if (!art.isNull("publishedAt")) {
-      String pub = art.getString("publishedAt");
+    if (!art.isNull("publish_date")) {
+      String pub = art.getString("publish_date");
       if (pub.length() >= 19) {
         try {
           long t = sdf.parse(pub.substring(0, 19)).getTime();
